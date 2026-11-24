@@ -1,58 +1,138 @@
--- Задание 1 Выбрать всех читателей, родившихся в 1990 году и проживающих на Шипиловской улице.
+-- =====================================================================
+-- Лабораторная работа №2. Создание запросов. Вариант 7
+-- Таблицы: products (Товар), order_items (Содержимое заказов)
+-- Страна "Russia" = отечественный товар, остальные = зарубежный
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 0. ПОДГОТОВКА ДАННЫХ (выполнить ОДИН раз)
+-- ---------------------------------------------------------------------
+
+-- Для задания 5 нужны товары без производителя
+ALTER TABLE products ALTER COLUMN manufacturer DROP NOT NULL;
+
+-- Дополнительные товары: ножницы, просроченные продукты
+INSERT INTO products
+(product_name, units_per_pack, color, specifications, country, manufacturer, expiration_date)
+VALUES
+('Scissors office', 12, 'Orange', 'Plastic handles, 17 cm', 'Russia', 'Erich Krause', NULL),
+('Scissors office', 12, 'Orange', 'Plastic handles, 21 cm', 'Russia', NULL,           NULL),
+('Scissors office', 12, 'Orange', 'Plastic handles, 13 cm', 'China',  'Deli',        NULL),
+('Scissors office', 12, 'Green',  'Metal handles, 21 cm',    'Russia', 'Hatber',      NULL),
+('Yogurt',          12, 'White',  '125 g',                   'Russia', 'Danone',      '2026-10-15'),
+('Cottage cheese',  10, 'White',  '200 g',                   'Russia', 'Prostokvashino', '2026-11-10');
+
+-- Заказы с новыми товарами (код товара берем по названию и характеристикам)
+INSERT INTO order_items (order_number, product_id, quantity, package)
+SELECT 1007, product_id, 5, 'Box' FROM products
+ WHERE product_name = 'Scissors office' AND specifications = 'Plastic handles, 17 cm';
+INSERT INTO order_items (order_number, product_id, quantity, package)
+SELECT 1008, product_id, 3, 'Box' FROM products
+ WHERE product_name = 'Scissors office' AND specifications = 'Plastic handles, 21 cm';
+INSERT INTO order_items (order_number, product_id, quantity, package)
+SELECT 1008, product_id, 2, 'Pack' FROM products
+ WHERE product_name = 'Scissors office' AND specifications = 'Plastic handles, 13 cm';
+INSERT INTO order_items (order_number, product_id, quantity, package)
+SELECT 1009, product_id, 4, 'Box' FROM products
+ WHERE product_name = 'Scissors office' AND specifications = 'Metal handles, 21 cm';
+INSERT INTO order_items (order_number, product_id, quantity, package)
+SELECT 1009, product_id, 6, 'Box' FROM products WHERE product_name = 'Yogurt';
+
+
+-- ---------------------------------------------------------------------
+-- 1. Выбрать товар, у которого закончился срок годности
+--    (функция CURRENT_DATE - текущая дата)
+-- ---------------------------------------------------------------------
 SELECT *
-FROM Readers
-WHERE EXTRACT(YEAR FROM Birth_date) =
-1990
-AND (Address ILIKE 'Shipilovskaya'
-OR Address ILIKE 'Шипиловская');
-
--- Задание 2 Выбрать телефонные номера всех читателей, фамилии которых начинаются на «А», «Б» или «В».
-SELECT Last_name, Phone
-FROM Readers
-WHERE LEFT(Last_name, 1) IN ('A', 'B', 'V', 'А', 'Б', 'В');
+FROM products
+WHERE expiration_date < CURRENT_DATE;
 
 
--- Задание 3 Создать таблицу, содержащую данные 1 запроса, при условии, что эти читатели не пользовались абонементом
-DROP TABLE IF EXISTS Readers_new;
-SELECT r.*
-INTO Readers_new
-FROM Readers r
-WHERE EXTRACT(YEAR FROM r.Birth_date) = 1990
-  AND (r.Address ILIKE '%Shipilovskaya%' OR r.Address ILIKE '%Шипиловск%')
-  AND NOT EXISTS (SELECT 1 FROM Loans l WHERE l.Reader_ID = r.Reader_ID);
-SELECT * FROM Readers_new;
-
-
--- Задание 4 Добавить в созданную таблицу читателей, у которых нет телефона.
-INSERT INTO Readers_new
+-- ---------------------------------------------------------------------
+-- 2. Выбрать все ножницы с пластмассовыми ручками оранжевого цвета
+-- ---------------------------------------------------------------------
 SELECT *
-FROM Readers
-WHERE (Phone IS NULL OR TRIM(Phone) = '')
-  AND Reader_ID NOT IN (SELECT Reader_ID FROM Readers_new);
-SELECT * FROM Readers_new;
+FROM products
+WHERE product_name ILIKE 'Scissors%'
+  AND color = 'Orange'
+  AND specifications ILIKE '%plastic handles%';
 
 
--- Задание 5 В созданной таблице для всех читателей, проживающих на Домодедовской улице, изменить адрес на Борисовский проезд.
-UPDATE Readers_new
-SET Address = 'Borisovsky proezd'
-WHERE Address ILIKE '%Domodedovskaya%' OR Address ILIKE '%Домодедовск%';
+-- ---------------------------------------------------------------------
+-- 3. Создать таблицу с данными 2 запроса с указанием номеров заказов
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS scissors_orders;
 
-SELECT * FROM Readers_new;
+SELECT p.product_id, p.product_name, p.units_per_pack, p.color,
+       p.specifications, p.country, p.manufacturer, p.expiration_date,
+       oi.order_number
+INTO scissors_orders
+FROM products p
+JOIN order_items oi ON oi.product_id = p.product_id
+WHERE p.product_name ILIKE 'Scissors%'
+  AND p.color = 'Orange'
+  AND p.specifications ILIKE '%plastic handles%';
+
+SELECT * FROM scissors_orders;
 
 
--- Задание 6 Удалить из созданной таблицы записи для всех читателей, у которых не указаны паспортные данные.
-DELETE FROM Readers_new
-WHERE Passport_data IS NULL OR TRIM(Passport_data) = '';
+-- ---------------------------------------------------------------------
+-- 4. Добавить в созданную таблицу номера заказов, содержащих любые
+--    канцтовары (Insert ... Select)
+--    Канцтовары: тетради, ручки, ножницы, карандаши, линейки
+-- ---------------------------------------------------------------------
+INSERT INTO scissors_orders
+       (product_id, product_name, units_per_pack, color, specifications,
+        country, manufacturer, expiration_date, order_number)
+SELECT p.product_id, p.product_name, p.units_per_pack, p.color,
+       p.specifications, p.country, p.manufacturer, p.expiration_date,
+       oi.order_number
+FROM products p
+JOIN order_items oi ON oi.product_id = p.product_id
+WHERE (p.product_name ILIKE 'Notebook%'
+    OR p.product_name ILIKE 'Ballpoint pen%'
+    OR p.product_name ILIKE 'Scissors%'
+    OR p.product_name ILIKE 'Pencil%'
+    OR p.product_name ILIKE 'Ruler%')
+  AND NOT EXISTS (SELECT 1
+                  FROM scissors_orders s
+                  WHERE s.product_id = p.product_id
+                    AND s.order_number = oi.order_number);
 
-SELECT * FROM Readers_new;
+SELECT * FROM scissors_orders ORDER BY order_number;
 
 
--- Задание 7 Посчитать количество книг, взятых в библиотеке каждым из читателей
-SELECT r.Reader_ID,
-       r.Last_name,
-       r.First_name,
-       COUNT(l.Book_ID) AS books_taken
-FROM Readers r
-LEFT JOIN Loans l ON l.Reader_ID = r.Reader_ID
-GROUP BY r.Reader_ID, r.Last_name, r.First_name
-ORDER BY books_taken DESC, r.Last_name;
+-- ---------------------------------------------------------------------
+-- 5. В созданной таблице для каждого товара, у которого не указан
+--    производитель, изменить цвет на черный (Update)
+-- ---------------------------------------------------------------------
+UPDATE scissors_orders
+SET color = 'Black'
+WHERE manufacturer IS NULL;
+
+SELECT * FROM scissors_orders ORDER BY order_number;
+
+
+-- ---------------------------------------------------------------------
+-- 6. Удалить из созданной таблицы весь товар зарубежного производства
+--    (Delete)
+-- ---------------------------------------------------------------------
+DELETE FROM scissors_orders
+WHERE country <> 'Russia';
+
+SELECT * FROM scissors_orders ORDER BY order_number;
+
+
+-- ---------------------------------------------------------------------
+-- 7. Посчитать количество наименований товара для каждого
+--    отечественного производителя
+--    (агрегатная функция COUNT)
+-- ---------------------------------------------------------------------
+SELECT manufacturer,
+       COUNT(DISTINCT product_name) AS product_names_count
+FROM products
+WHERE country = 'Russia'
+  AND manufacturer IS NOT NULL
+GROUP BY manufacturer
+ORDER BY manufacturer;
